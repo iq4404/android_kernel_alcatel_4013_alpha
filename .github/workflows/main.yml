@@ -1,0 +1,57 @@
+name: Build Kernel
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_HARDLINK: "true"
+      KERNEL_DEFCONFIG: "4013_defconfig"
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: 'true'
+        fetch-depth: 100
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+
+    - name: Clean Kernel
+      run: |
+        make clean
+        make mrproper
+
+    - name: Get Time
+      id: get_time
+      run: echo "TIME=$(TZ=UTC-8 date +%m%d%H%M )" >> $GITHUB_OUTPUT
+
+    - name: Build Kernel
+      run: |
+        if [[ ! -d gcc ]]; then
+          git clone https://github.com/LinerSRT/arm-eabi-4.8 gcc
+        fi
+        mkdir -p out
+        export USE_CCACHE=1
+        export ARCH=arm
+        export SUBARCH=arm
+        export CROSS_COMPILE=${PWD}/gcc/bin/arm-eabi-
+        export TARGET=out
+        make O=out ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE $KERNEL_DEFCONFIG
+        make O=out ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE -j8 | tee build.log
+
+    - name: Upload zImage 
+      run: |
+        curl -T out/arch/arm/boot/zImage https://bashupload.com/ --output upload_link
+        UPLOAD_LINK=$(< upload_link)
+        echo "Uploaded file link: $UPLOAD_LINK"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
